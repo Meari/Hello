@@ -1,3 +1,8 @@
+import logging
+
+logger = logging.getLogger(__name__)
+
+
 def parse_hot_search_items(response_data):
     items = []
     try:
@@ -22,7 +27,7 @@ def parse_hot_search_items(response_data):
             items.append(item)
 
     except Exception as e:
-        print(f"[解析] 热搜数据解析失败: {e}")
+        logger.error("[解析] 热搜数据解析失败: %s", e)
 
     return items
 
@@ -68,6 +73,6 @@ def parse_trending_aweme_items(response_data):
             items.append(item)
 
     except Exception as e:
-        print(f"[解析] 视频数据解析失败: {e}")
+        logger.error("[解析] 视频数据解析失败: %s", e)
 
     return items

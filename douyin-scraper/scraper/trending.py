@@ -16,17 +16,17 @@ class DouyinTrendingScraper:
         params = {"detail_list": "1" if detail_list else "0"}
         resp = self.client.get(HOT_SEARCH_URL, params=params)
         if resp is None:
-            print("[热搜] 请求失败，未获取到数据")
+            logger.warning("[热搜] 请求失败，未获取到数据")
             return []
 
         data = resp.json()
         status_code = data.get("status_code", -1)
         if status_code != 0:
-            print(f"[热搜] API 返回异常状态码: {status_code}, 消息: {data.get('status_msg', '')}")
+            logger.warning("[热搜] API 返回异常状态码: %s, 消息: %s", status_code, data.get("status_msg", ""))
             return []
 
         items = parse_hot_search_items(data)
-        print(f"[热搜] 成功获取 {len(items)} 条热搜话题")
+        logger.info("[热搜] 成功获取 %d 条热搜话题", len(items))
         return items
 
     def fetch_trending_feed(self, count=20, max_cursor=0):
@@ -37,20 +37,20 @@ class DouyinTrendingScraper:
         }
         resp = self.client.get(TRENDING_FEED_URL, params=params)
         if resp is None:
-            print("[热门视频] 请求失败，未获取到数据")
-            return []
+            logger.warning("[热门视频] 请求失败，未获取到数据")
+            return [], 0, 0
 
         data = resp.json()
         status_code = data.get("status_code", -1)
         if status_code != 0:
-            print(f"[热门视频] API 返回异常状态码: {status_code}, 消息: {data.get('status_msg', '')}")
-            return []
+            logger.warning("[热门视频] API 返回异常状态码: %s, 消息: %s", status_code, data.get("status_msg", ""))
+            return [], 0, 0
 
         items = parse_trending_aweme_items(data)
         has_more = data.get("has_more", 0)
         next_cursor = data.get("max_cursor", 0)
 
-        print(f"[热门视频] 成功获取 {len(items)} 条视频 (has_more={has_more}, next_cursor={next_cursor})")
+        logger.info("[热门视频] 成功获取 %d 条视频 (has_more=%s, next_cursor=%s)", len(items), has_more, next_cursor)
         return items, has_more, next_cursor
 
     def fetch_trending_videos(self, total=50):
@@ -73,53 +73,44 @@ class DouyinTrendingScraper:
         for idx, item in enumerate(all_items):
             item["rank"] = idx + 1
 
-        print(f"[热门视频] 共获取 {len(all_items)} 条视频")
+        logger.info("[热门视频] 共获取 %d 条视频", len(all_items))
         return all_items
 
     def run(self, mode="hot_search", output_format="json", count=50):
-        print("=" * 60)
-        print("  抖音热门内容爬虫")
-        print(f"  模式: {mode}  数量: {count}  格式: {output_format}")
-        print("=" * 60)
+        logger.info("=" * 60)
+        logger.info("  抖音热门内容爬虫")
+        logger.info("  模式: %s  数量: %d  格式: %s", mode, count, output_format)
+        logger.info("=" * 60)
 
-        if mode == "hot_search":
-            items = self.fetch_hot_search(detail_list=True)
-        elif mode == "trending":
-            items = self.fetch_trending_videos(total=count)
-        elif mode == "all":
-            print("\n--- 热搜榜单 ---")
+        result = {}
+
+        if mode in ("hot_search", "all"):
+            logger.info("--- 热搜榜单 ---")
             hot_items = self.fetch_hot_search(detail_list=True)
-            print("\n--- 热门视频 ---")
+            result["hot_search"] = hot_items
+
+        if mode in ("trending", "all"):
+            logger.info("--- 热门视频 ---")
             trending_items = self.fetch_trending_videos(total=count)
+            result["trending"] = trending_items
 
-            saved_files = []
-            if hot_items:
-                if output_format == "csv":
-                    saved_files.append(save_to_csv(hot_items, filename="hot_search.csv"))
-                else:
-                    saved_files.append(save_to_json(hot_items, filename="hot_search.json"))
+        if mode not in ("hot_search", "trending", "all"):
+            logger.error("[错误] 未知模式: %s", mode)
+            return result
 
-            if trending_items:
-                if output_format == "csv":
-                    saved_files.append(save_to_csv(trending_items, filename="trending_videos.csv"))
-                else:
-                    saved_files.append(save_to_json(trending_items, filename="trending_videos.json"))
+        saved_files = []
+        for key, items in result.items():
+            if not items:
+                continue
+            if output_format == "csv":
+                saved_files.append(save_to_csv(items, filename=f"{key}.csv"))
+            else:
+                saved_files.append(save_to_json(items, filename=f"{key}.json"))
 
-            print("\n[完成] 所有数据已保存!")
-            for f in saved_files:
-                print(f"  -> {f}")
-            return {"hot_search": hot_items, "trending": trending_items}
-        else:
-            print(f"[错误] 未知模式: {mode}")
-            return []
-
-        if output_format == "csv":
-            save_to_csv(items)
-        else:
-            save_to_json(items)
-
-        print("\n[完成] 数据已保存!")
-        return items
+        logger.info("[完成] 所有数据已保存!")
+        for f in saved_files:
+            logger.info("  -> %s", f)
+        return result
 
     def close(self):
         self.client.close()
