@@ -1,11 +1,15 @@
+import json
 import logging
+import os
 
 from scraper.client import DouyinClient
-from scraper.config import HOT_SEARCH_URL, TRENDING_FEED_URL
+from scraper.config import HOT_SEARCH_URL, TRENDING_FEED_URL, OUTPUT_DIR, ensure_output_dir
 from scraper.parser import parse_hot_search_items, parse_trending_aweme_items
 from scraper.storage import save_to_json, save_to_csv
 
 logger = logging.getLogger(__name__)
+
+CHECKPOINT_FILE = os.path.join(OUTPUT_DIR, ".trending_checkpoint.json")
 
 
 class DouyinTrendingScraper:
@@ -53,19 +57,65 @@ class DouyinTrendingScraper:
         logger.info("[热门视频] 成功获取 %d 条视频 (has_more=%s, next_cursor=%s)", len(items), has_more, next_cursor)
         return items, has_more, next_cursor
 
-    def fetch_trending_videos(self, total=50):
+    def _load_checkpoint(self):
+        if not os.path.exists(CHECKPOINT_FILE):
+            return None
+        try:
+            with open(CHECKPOINT_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except (json.JSONDecodeError, OSError):
+            return None
+
+    def _save_checkpoint(self, all_items, max_cursor, has_more):
+        ensure_output_dir()
+        try:
+            with open(CHECKPOINT_FILE, "w", encoding="utf-8") as f:
+                json.dump({
+                    "max_cursor": max_cursor,
+                    "has_more": has_more,
+                    "collected": len(all_items),
+                }, f)
+        except OSError:
+            pass
+
+    def _clear_checkpoint(self):
+        if os.path.exists(CHECKPOINT_FILE):
+            try:
+                os.remove(CHECKPOINT_FILE)
+            except OSError:
+                pass
+
+    def fetch_trending_videos(self, total=50, incremental_callback=None):
         all_items = []
         max_cursor = 0
         has_more = 1
+
+        checkpoint = self._load_checkpoint()
+        if checkpoint:
+            logger.info("[断点] 发现上次中断点: cursor=%s, 已收集=%d", checkpoint.get("max_cursor", 0), checkpoint.get("collected", 0))
 
         while has_more and len(all_items) < total:
             remaining = total - len(all_items)
             batch_size = min(remaining, 20)
 
-            items, has_more, max_cursor = self.fetch_trending_feed(
-                count=batch_size, max_cursor=max_cursor
-            )
+            try:
+                items, has_more, max_cursor = self.fetch_trending_feed(
+                    count=batch_size, max_cursor=max_cursor
+                )
+            except Exception as e:
+                logger.error("[热门视频] 请求异常，保存断点: %s", e)
+                self._save_checkpoint(all_items, max_cursor, has_more)
+                raise
+
             all_items.extend(items)
+
+            self._save_checkpoint(all_items, max_cursor, has_more)
+
+            if incremental_callback and items:
+                try:
+                    incremental_callback(items, len(all_items))
+                except Exception as e:
+                    logger.warning("[回调] 增量保存回调异常: %s", e)
 
             if not items:
                 break
@@ -73,6 +123,7 @@ class DouyinTrendingScraper:
         for idx, item in enumerate(all_items):
             item["rank"] = idx + 1
 
+        self._clear_checkpoint()
         logger.info("[热门视频] 共获取 %d 条视频", len(all_items))
         return all_items
 
@@ -81,6 +132,10 @@ class DouyinTrendingScraper:
         logger.info("  抖音热门内容爬虫")
         logger.info("  模式: %s  数量: %d  格式: %s", mode, count, output_format)
         logger.info("=" * 60)
+
+        cookie_valid = self.client.verify_cookies()
+        if not cookie_valid:
+            logger.warning("[Cookie] Cookie 检测未通过，部分请求可能被限制")
 
         result = {}
 

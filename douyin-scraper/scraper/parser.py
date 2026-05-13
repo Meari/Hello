@@ -3,11 +3,56 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+def _validate_structure(data, path, context=""):
+    if isinstance(path, str):
+        path = [path]
+    current = data
+    for i, key in enumerate(path):
+        if not isinstance(current, dict):
+            logger.warning(
+                "[校验] %s期望字段路径 %s 中的 '%s' 不可访问，当前值类型为 %s",
+                context, " -> ".join(path), key, type(current).__name__,
+            )
+            return False
+        if key not in current:
+            logger.warning(
+                "[校验] %s缺少预期字段 '%s'（完整路径: %s），接口响应结构可能已变更",
+                context, key, " -> ".join(path),
+            )
+            return False
+        current = current[key]
+    return True
+
+
+def _check_status(data, context=""):
+    status_code = data.get("status_code", -1)
+    if status_code is None or status_code == -1:
+        logger.warning("[校验] %s响应中缺少 status_code 字段", context)
+        return False
+    if status_code != 0:
+        logger.warning(
+            "[校验] %sAPI 返回非零状态码: %s, 消息: %s",
+            context, status_code, data.get("status_msg", ""),
+        )
+    return status_code == 0
+
+
 def parse_hot_search_items(response_data):
     items = []
     try:
         data = response_data if isinstance(response_data, dict) else response_data.json()
+
+        if not _validate_structure(data, ["data", "word_list"], context="热搜"):
+            return items
+
+        if not _check_status(data, context="热搜"):
+            return items
+
         word_list = data.get("data", {}).get("word_list", [])
+
+        if not isinstance(word_list, list):
+            logger.warning("[校验] 热搜 word_list 不是列表类型，实际类型: %s", type(word_list).__name__)
+            return items
 
         for rank, word in enumerate(word_list, 1):
             item = {
@@ -36,7 +81,18 @@ def parse_trending_aweme_items(response_data):
     items = []
     try:
         data = response_data if isinstance(response_data, dict) else response_data.json()
+
+        if not _validate_structure(data, "aweme_list", context="热门视频"):
+            return items
+
+        if not _check_status(data, context="热门视频"):
+            return items
+
         aweme_list = data.get("aweme_list", [])
+
+        if not isinstance(aweme_list, list):
+            logger.warning("[校验] 热门视频 aweme_list 不是列表类型，实际类型: %s", type(aweme_list).__name__)
+            return items
 
         for rank, aweme in enumerate(aweme_list, 1):
             statistics = aweme.get("statistics", {})
