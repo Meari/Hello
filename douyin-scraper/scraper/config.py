@@ -1,3 +1,4 @@
+import json
 import os
 import random
 
@@ -7,9 +8,16 @@ REQUEST_TIMEOUT = 15
 REQUEST_DELAY_MIN = 1.0
 REQUEST_DELAY_MAX = 3.0
 MAX_RETRIES = 3
+RETRY_BACKOFF_BASE = 2.0
 
 HOT_SEARCH_URL = "https://www.douyin.com/aweme/v1/web/hot/search/list/"
 TRENDING_FEED_URL = "https://www.douyin.com/aweme/v1/web/aweme/hot/"
+COOKIE_CHECK_URL = "https://www.douyin.com/"
+
+PROXY_LIST = []
+PROXY_MODE = "round_robin"
+
+CONFIG_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config.json")
 
 USER_AGENTS = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
@@ -32,8 +40,6 @@ DEFAULT_HEADERS = {
     "Sec-Ch-Ua-Platform": '"Windows"',
 }
 
-DEFAULT_COOKIES = {}
-
 
 def random_user_agent():
     return random.choice(USER_AGENTS)
@@ -49,3 +55,21 @@ def build_headers(extra=None):
 
 def ensure_output_dir():
     os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+
+def load_config():
+    if not os.path.exists(CONFIG_FILE):
+        return {}
+    try:
+        with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (json.JSONDecodeError, OSError) as e:
+        return {}
+
+
+def save_config(data):
+    try:
+        with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+    except OSError as e:
+        pass
