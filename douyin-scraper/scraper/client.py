@@ -12,7 +12,6 @@ from scraper.config import (
     RETRY_BACKOFF_BASE,
     build_headers,
     PROXY_LIST,
-    PROXY_MODE,
     COOKIE_CHECK_URL,
 )
 
@@ -76,6 +75,11 @@ class DouyinClient:
             logger.warning("[Cookie] Cookie 检测请求失败: %s", e)
             return False
 
+    def _retry_sleep(self, attempt):
+        if attempt < self.max_retries:
+            wait = self._backoff_delay(attempt)
+            time.sleep(wait)
+
     def get(self, url, params=None, headers=None, **kwargs):
         return self._request("GET", url, params=params, headers=headers, **kwargs)
 
@@ -105,38 +109,34 @@ class DouyinClient:
                 if resp.status_code == 200:
                     return resp
                 elif resp.status_code == 429:
-                    wait = self._backoff_delay(attempt)
-                    logger.warning("Rate limited (429), backing off %.1fs before retry", wait)
-                    time.sleep(wait)
+                    logger.warning("Rate limited (429), backing off before retry")
+                    self._retry_sleep(attempt)
                     continue
                 elif resp.status_code >= 500:
-                    wait = self._backoff_delay(attempt)
-                    logger.warning("Server error (HTTP %d), backing off %.1fs before retry", resp.status_code, wait)
-                    time.sleep(wait)
+                    logger.warning("Server error (HTTP %d), backing off before retry", resp.status_code)
+                    self._retry_sleep(attempt)
                     continue
                 else:
                     logger.warning("HTTP %d for %s", resp.status_code, url)
                     if attempt < self.max_retries:
-                        wait = self._backoff_delay(attempt)
-                        logger.debug("Backing off %.1fs before retry %d", wait, attempt + 1)
-                        time.sleep(wait)
+                        self._retry_sleep(attempt)
                         continue
                     resp.raise_for_status()
 
             except requests.exceptions.Timeout:
-                wait = self._backoff_delay(attempt)
-                logger.warning("Request timeout (attempt %d/%d), backing off %.1fs", attempt, self.max_retries, wait)
-                time.sleep(wait)
+                logger.warning("Request timeout (attempt %d/%d)", attempt, self.max_retries)
                 if attempt == self.max_retries:
                     raise
+                self._retry_sleep(attempt)
             except requests.exceptions.ConnectionError as e:
-                wait = self._backoff_delay(attempt)
-                logger.warning("Connection error (attempt %d/%d): %s, backing off %.1fs", attempt, self.max_retries, e, wait)
-                time.sleep(wait)
+                logger.warning("Connection error (attempt %d/%d): %s", attempt, self.max_retries, e)
                 if attempt == self.max_retries:
                     raise
+                self._retry_sleep(attempt)
 
-        return None
+        raise requests.exceptions.RequestException(
+            f"Max retries ({self.max_retries}) exceeded for {method} {url}"
+        )
 
     def close(self):
         self.session.close()

@@ -13,8 +13,8 @@ CHECKPOINT_FILE = os.path.join(OUTPUT_DIR, ".trending_checkpoint.json")
 
 
 class DouyinTrendingScraper:
-    def __init__(self, cookies=None, delay_range=None):
-        self.client = DouyinClient(cookies=cookies, delay_range=delay_range)
+    def __init__(self, cookies=None, delay_range=None, proxies=None):
+        self.client = DouyinClient(cookies=cookies, delay_range=delay_range, proxies=proxies)
 
     def fetch_hot_search(self, detail_list=False):
         params = {"detail_list": "1" if detail_list else "0"}
@@ -23,13 +23,7 @@ class DouyinTrendingScraper:
             logger.warning("[热搜] 请求失败，未获取到数据")
             return []
 
-        data = resp.json()
-        status_code = data.get("status_code", -1)
-        if status_code != 0:
-            logger.warning("[热搜] API 返回异常状态码: %s, 消息: %s", status_code, data.get("status_msg", ""))
-            return []
-
-        items = parse_hot_search_items(data)
+        items = parse_hot_search_items(resp.json())
         logger.info("[热搜] 成功获取 %d 条热搜话题", len(items))
         return items
 
@@ -45,17 +39,12 @@ class DouyinTrendingScraper:
             return [], 0, 0
 
         data = resp.json()
-        status_code = data.get("status_code", -1)
-        if status_code != 0:
-            logger.warning("[热门视频] API 返回异常状态码: %s, 消息: %s", status_code, data.get("status_msg", ""))
-            return [], 0, 0
-
         items = parse_trending_aweme_items(data)
         has_more = data.get("has_more", 0)
-        next_cursor = data.get("max_cursor", 0)
+        max_cursor = data.get("max_cursor", 0)
 
-        logger.info("[热门视频] 成功获取 %d 条视频 (has_more=%s, next_cursor=%s)", len(items), has_more, next_cursor)
-        return items, has_more, next_cursor
+        logger.info("[热门视频] 成功获取 %d 条视频 (has_more=%s, max_cursor=%s)", len(items), has_more, max_cursor)
+        return items, has_more, max_cursor
 
     def _load_checkpoint(self):
         if not os.path.exists(CHECKPOINT_FILE):
@@ -92,7 +81,8 @@ class DouyinTrendingScraper:
 
         checkpoint = self._load_checkpoint()
         if checkpoint:
-            logger.info("[断点] 发现上次中断点: cursor=%s, 已收集=%d", checkpoint.get("max_cursor", 0), checkpoint.get("collected", 0))
+            max_cursor = checkpoint.get("max_cursor", 0)
+            logger.info("[断点] 发现上次中断点: cursor=%s, 已收集=%d", max_cursor, checkpoint.get("collected", 0))
 
         while has_more and len(all_items) < total:
             remaining = total - len(all_items)
@@ -148,10 +138,6 @@ class DouyinTrendingScraper:
             logger.info("--- 热门视频 ---")
             trending_items = self.fetch_trending_videos(total=count)
             result["trending"] = trending_items
-
-        if mode not in ("hot_search", "trending", "all"):
-            logger.error("[错误] 未知模式: %s", mode)
-            return result
 
         saved_files = []
         for key, items in result.items():

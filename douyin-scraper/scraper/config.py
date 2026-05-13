@@ -1,6 +1,9 @@
 import json
+import logging
 import os
 import random
+
+logger = logging.getLogger(__name__)
 
 OUTPUT_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "output")
 
@@ -15,7 +18,6 @@ TRENDING_FEED_URL = "https://www.douyin.com/aweme/v1/web/aweme/hot/"
 COOKIE_CHECK_URL = "https://www.douyin.com/"
 
 PROXY_LIST = []
-PROXY_MODE = "round_robin"
 
 CONFIG_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config.json")
 
@@ -72,4 +74,4 @@ def save_config(data):
         with open(CONFIG_FILE, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
     except OSError as e:
-        pass
+        logger.warning("[配置] 保存配置文件失败: %s", e)

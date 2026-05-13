@@ -7,7 +7,7 @@ def _validate_structure(data, path, context=""):
     if isinstance(path, str):
         path = [path]
     current = data
-    for i, key in enumerate(path):
+    for key in path:
         if not isinstance(current, dict):
             logger.warning(
                 "[校验] %s期望字段路径 %s 中的 '%s' 不可访问，当前值类型为 %s",

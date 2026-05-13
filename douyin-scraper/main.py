@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import argparse
 import logging
-import os
+import traceback
 
 from scraper.trending import DouyinTrendingScraper
 from scraper.config import CONFIG_FILE, load_config, save_config
@@ -134,10 +134,8 @@ def main():
     scraper = DouyinTrendingScraper(
         cookies=cookies if cookies else None,
         delay_range=(args.min_delay, args.max_delay),
+        proxies=proxies,
     )
-
-    if proxies:
-        scraper.client._proxies = proxies
 
     try:
         scraper.run(
@@ -150,7 +148,6 @@ def main():
     except Exception as e:
         print(f"\n[错误] {e}")
         if args.verbose:
-            import traceback
             traceback.print_exc()
     finally:
         scraper.close()
