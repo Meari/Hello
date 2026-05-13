@@ -2,7 +2,6 @@ import os
 import random
 
 OUTPUT_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "output")
-os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 REQUEST_TIMEOUT = 15
 REQUEST_DELAY_MIN = 1.0
@@ -46,3 +45,7 @@ def build_headers(extra=None):
     if extra:
         headers.update(extra)
     return headers
+
+
+def ensure_output_dir():
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
